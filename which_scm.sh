@@ -55,6 +55,7 @@ function primary_type
 {
 	typeset scmid
 
+	[ -d "$1/.git" ] && scmid="$scmid git"
 	[ -d "$1/Codemgr_wsdata" ] && scmid="$scmid teamware"
 	[ -d "$1/.hg" ] && scmid="$scmid mercurial"
 	[ -d "$1/CVS" ] && scmid="$scmid cvs"
@@ -100,7 +101,7 @@ while [[ "$DIR" != / ]]; do
 	# We're done searching if we hit either a change in type or the top
 	# of a "third type" control system.
 	if [[ "$SCM_TYPE" != "$CWD_TYPE" || "$SCM_TYPE" == mercurial || \
-	    "$SCM_TYPE" == teamware ]]; then
+	    "$SCM_TYPE" == teamware || "$SCM_TYPE" == git ]]; then
 		break
 	fi
 	PREVDIR="$DIR"

@@ -1561,6 +1561,100 @@ function flist_from_teamware
 }
 
 #
+# Create the wx active list from GIT w/s
+#
+function git_active_wxfile
+{
+	typeset child=$1
+	typeset parent=$2
+
+	TMPFLISTREF=/tmp/$$.active.flist_ref
+        TMPFLIST1=/tmp/$$.active.flist_tmp1
+        TMPFLIST=/tmp/$$.active
+
+	$GIT diff-tree -M --name-status -r $parent $child | awk '{ print $2 "#" $3 }' > $TMPFLISTREF
+
+        #DEBUG:
+        #cp $TMPFLISTREF /tmp/debug.tmpflistref
+
+        #
+        #  get a list of revisions between $parent and $child 
+        #  in the format <PARENT>..<COMMIT>
+        # 
+        git_commit_list=`$GIT rev-list --first-parent --pretty=format:%P..%H --reverse $parent..$child | grep -v "^commit"`
+	git_show_rev=`$GIT rev-list --first-parent --pretty=format:%P..%H --reverse $parent..$child | grep -v "^commit" | wc -l`
+        counter=0
+        for i in $git_commit_list; do
+
+           #
+           # Modify temp active list with files changed between $prev and $crev in the 
+           # format "file counter comments"
+           #
+           comments=`$GIT rev-list --pretty=format:%s $i | grep -v "^commit"`
+           for j in `git diff-tree -r --name-only $i`; do
+              echo "$j $counter	#$comments" >> $TMPFLIST1
+           done
+           counter=`expr $counter + 1`
+
+	   #
+ 	   # If commit list consist in 2 or more commits, add revision number before 
+           # each of the comment
+	   #
+	   if [[ "$git_show_rev" -gt 1 ]]; then
+           	commit_abbrev=`$GIT rev-list --pretty=format:%h $i | grep -v "^commit"`
+           	for j in `git diff-tree -r --name-only $i`; do
+              		echo "$j $counter	#--- $commit_abbrev ---" >> $TMPFLIST1
+           	done
+           	counter=`expr $counter + 1`
+           fi
+
+        done
+
+        #DEBUG:
+        #cp $TMPFLIST1 /tmp/debug.tmpflist1
+
+        #
+        # now based on the reflist go file by file and form wx-style active list
+        # by placing comments (in appropriate order) from the TMPFLIST1
+        #
+
+        for i in `cat $TMPFLISTREF`; do 
+	   ofile=`echo $i | sed -e 's/#.*//'`
+           rfile=`echo $i | sed -e 's/^.*#//'`
+           [[ -n "$rfile" ]] && print -n "$rfile " >> $TMPFLIST
+           echo "$ofile" >> $TMPFLIST
+           echo "" >> $TMPFLIST
+           grep "$ofile" $TMPFLIST1  | sort -k 1,1 -k 2,2rn - | sed -e 's/.*#//'  >> $TMPFLIST
+           echo "" >> $TMPFLIST
+        done
+
+        #DEBUG:
+        #cp $TMPFLIST /tmp/debug.tmpflist
+
+
+	wxfile=$TMPFLIST
+}
+
+#
+# flist_from_git
+# Call git_active_wxfile to get a wx-style active list, and hand it off to
+# flist_from_wx
+#
+function flist_from_git 
+{
+	typeset child=$1
+	typeset parent=$2
+
+	print " File list from: git_active_wxfile $child $parent ...\c"
+
+	git_active_wxfile $child $parent
+	
+	# flist_from_wx prints the Done, so we don't have to.
+	flist_from_wx $TMPFLIST
+}
+
+
+#
 # Call hg-active to get the active list output in the wx active list format
 #
 function hg_active_wxfile
@@ -1816,6 +1910,30 @@ function build_old_new_mercurial
 	fi
 }
 
+function build_old_new_git
+{
+	typeset olddir="$1"
+	typeset newdir="$2"
+
+	rm -f $newdir/$DIR/$F
+        if [[ "$DIR" == "." ]]; then
+		$GIT show $CWS_REV:$F > $newdir/$F 2> /dev/null
+		[[ $? != 0 ]] && rm -f $newdir/$F
+	else
+		$GIT show $CWS_REV:$DIR/$F > $newdir/$DIR/$F 2> /dev/null
+		[[ $? != 0 ]] && rm -f $newdir/$DIR/$F
+	fi
+
+        rm -f $olddir/$PDIR/$PF
+        if [[ "$PDIR" == "." ]]; then
+		$GIT show $PWS_REV:$PF > $olddir/$PF 2> /dev/null
+		[[ $? != 0 ]] && rm -f $olddir/$PF
+	else
+		$GIT show $PWS_REV:$PDIR/$PF > $olddir/$PDIR/$PF 2> /dev/null
+		[[ $? != 0 ]] && rm -f $olddir/$PDIR/$PF
+	fi
+}
+
 function build_old_new_subversion
 {
 	typeset olddir="$1"
@@ -1876,6 +1994,8 @@ function build_old_new
 		build_old_new_teamware "$olddir" "$newdir"
 	elif [[ $SCM_MODE == "mercurial" ]]; then
 		build_old_new_mercurial "$olddir" "$newdir"
+        elif [[ $SCM_MODE == "git" ]]; then
+		build_old_new_git "$olddir" "$newdir"
 	elif [[ $SCM_MODE == "subversion" ]]; then
 		build_old_new_subversion "$olddir" "$newdir"
 	elif [[ $SCM_MODE == "unknown" ]]; then
@@ -1916,7 +2036,11 @@ Environment:
 
 SCM Specific Options:
 	TeamWare: webrev [common-options] -l [arguments to 'putback']
-
+        GIT:      
+                  -c <child_rev>: Use specified revision as child 
+                                   (default is HEAD)
+                  -r <referent_rev>: Use specified revision as basis for comparison 
+                                     (default is $child_rev^)
 SCM Environment:
 	CODEMGR_WS: Workspace location.
 	CODEMGR_PARENT: Parent workspace location.
@@ -1953,7 +2077,7 @@ PATH=$(dirname $(whence $0)):$PATH
 [[ -z $SFTP ]] && SFTP=`look_for_prog sftp`
 [[ -z $MKTEMP ]] && MKTEMP=`look_for_prog mktemp`
 [[ -z $GREP ]] && GREP=`look_for_prog grep`
-
+[[ -z $GIT ]] && GIT=`look_for_prog git`
 
 if [[ ! -x $PERL ]]; then
 	print -u2 "Error: No perl interpreter found.  Exiting."
@@ -1979,6 +2103,7 @@ integer TOTL TINS TDEL TMOD TUNC
 
 flist_mode=
 flist_file=
+cflag=
 iflag=
 lflag=
 Nflag=
@@ -1986,14 +2111,18 @@ nflag=
 Oflag=
 oflag=
 pflag=
+rflag=
 tflag=
 uflag=
 Uflag=
 wflag=
 remote_target=
-while getopts "i:o:p:lwONnt:U" opt
+while getopts "i:c:o:p:r:lwONnt:U" opt
 do
 	case $opt in
+        c)      cflag=1
+                CWS_REV=$OPTARG;;
+
 	i)	iflag=1
 		INCLUDE_FILE=$OPTARG;;
 
@@ -2016,6 +2145,9 @@ do
 
 	p)	pflag=1
 		codemgr_parent=$OPTARG;;
+
+        r)      rflag=1
+                PWS_REV=$OPTARG;;
 
 	t)	tflag=1
 		remote_target=$OPTARG;;
@@ -2083,7 +2215,7 @@ fi
 #
 $WHICH_SCM | read SCM_MODE junk || exit 1
 case "$SCM_MODE" in
-teamware|mercurial|subversion)
+teamware|mercurial|subversion|git)
 	;;
 unknown)
 	if [[ $flist_mode == "auto" ]]; then
@@ -2248,6 +2380,70 @@ if [[ $SCM_MODE == "teamware" ]]; then
 	PWS=$codemgr_parent
 
 	[[ -n $parent_webrev ]] && RWS=$(workspace parent $CWS)
+
+elif [[ $SCM_MODE == "git" ]]; then 
+	#
+	# Ignore CODEMGR_WS and PARENT_WS for now
+
+	CWS=`$GIT rev-parse --git-dir`
+	if [[ -z $CWS ]]; then
+		print -u2 "Error: Cannot find the root of the GIT repository"
+		exit 1
+	fi
+
+	if [[ $CWS == ".git" ]]; then 
+		CWS=`pwd` 
+	fi
+
+	[[ -z $CWS_REV ]] && CWS_REV="HEAD"
+
+	PWS=$CWS
+
+	[[ -z $PWS_REV ]] && PWS_REV="$CWS_REV^"
+      
+	#
+	# Check that CWS_REV and PWS_REV are correct
+	# echo "DEBUG: checking 1"
+
+	if ! git show $CWS_REV > /dev/null 2>/dev/null; then
+		print -u2 "Error: cannot find child revision ($CWS_REV)"
+		exit 1
+	fi
+
+	if ! git show $PWS_REV > /dev/null 2>/dev/null; then
+		print -u2 "Error: cannot find parent revision ($PWS_REV)"
+		exit 1
+	fi
+
+
+	#       
+	# Check that there is only one branch going from parent to child
+	# echo "DEBUG: checking 2"
+	if ! diff <(git rev-list --first-parent $PWS_REV..$CWS_REV) \
+          	<(git rev-list $PWS_REV..$CWS_REV) >/dev/null ; then
+     		print -u2 "Error: history between $PWS_REV and $CWS_REV is non-linear" 
+     		exit 1
+	fi 
+
+	#
+	# Check that there are no commits merged from somewhere else
+	# echo "DEBUG: checking 3"
+	parent_rev=`git rev-list -n 1 $PWS_REV`
+	git rev-list $PWS_REV..$CWS_REV |
+		while read rev; do
+			#
+        		# Check that for each revision $parent is an ancestor
+			if [[ "`git merge-base $rev $PWS_REV`" != "$parent_rev" ]] ; then 
+	   			print -u2 "Error: history between $PWS_REV and $CWS_REV is too complicated" 
+	   			exit 1
+			fi
+    		done || exit 1
+
+	if [[ -z $flist_done ]]; then
+		#echo "DEBUG: flist"
+		flist_from_git $CWS_REV $PWS_REV
+		flist_done=1
+	fi
 
 elif [[ $SCM_MODE == "mercurial" ]]; then
 	[[ -z $codemgr_ws && -n $CODEMGR_WS ]] && \
@@ -2452,7 +2648,11 @@ else
 			| sed -e 's/\([0-9a-f]\{12\}\).*/\1/'`
 		print "Compare against: $PWS (at $hg_parent_short)"
 	else
-		print "Compare against: $PWS"
+		if [[ -n $PWS_REV ]]; then 
+			print "Compare against: $PWS (at $PWS_REV)"
+		else
+			print "Compare against: $PWS"
+                fi
 	fi
 fi
 
@@ -2661,7 +2861,7 @@ do
 		diff -u $ofile /dev/null | sh -c "$cleanse_rmfile" \
 		    > $WDIR/$DIR/$F.patch
 
-		diff -u /dev/null $nfile | sh -c "$cleanse_newfile" \
+	diff -u /dev/null $nfile | sh -c "$cleanse_newfile" \
 		    >> $WDIR/$DIR/$F.patch
 
 	fi
@@ -3002,6 +3202,7 @@ do
 
 	if [[ $SCM_MODE == "teamware" ||
 	    $SCM_MODE == "mercurial" ||
+	    $SCM_MODE == "git" ||
 	    $SCM_MODE == "unknown" ]]; then
 
 		# Include warnings for important file mode situations:
