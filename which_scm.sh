@@ -94,10 +94,19 @@ SCM_TYPE=
 while [[ "$DIR" != / ]]; do
 	set -- $(primary_type "$DIR")
 	if [[ $# > 1 ]]; then
-		echo "unknown $ORIG_CWD"
-		exit 0
+		#
+		# Resolve .git vs Codemgr_wsdata conflict automatically
+		# in favor of .git
+		if [[ "$1" == "git" && "$2" == "teamware" ]]; then 
+			SCM_TYPE="$1"
+		else
+			echo "unknown $ORIG_CWD"
+			exit 0
+		fi
+	else
+		SCM_TYPE="$1"
 	fi
-	SCM_TYPE="$1"
+
 	# We're done searching if we hit either a change in type or the top
 	# of a "third type" control system.
 	if [[ "$SCM_TYPE" != "$CWD_TYPE" || "$SCM_TYPE" == mercurial || \
