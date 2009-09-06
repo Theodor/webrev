@@ -1624,7 +1624,7 @@ function git_active_wxfile
            [[ -n "$rfile" ]] && print -n "$rfile " >> $TMPFLIST
            echo "$ofile" >> $TMPFLIST
            echo "" >> $TMPFLIST
-           grep "$ofile" $TMPFLIST1  | sort -k 1,1 -k 2,2rn - | sed -e 's/.*#//'  >> $TMPFLIST
+           grep "^$ofile " $TMPFLIST1  | sort -k 1,1 -k 2,2rn - | sed -e 's/^[^#]*#//'  >> $TMPFLIST
            echo "" >> $TMPFLIST
         done
 
