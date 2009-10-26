@@ -63,15 +63,28 @@ function primary_type
 	echo $scmid
 }
 
+function multi_conflict
+{
+	if [[ $# > 1 ]]; then
+	    #
+            # Resolve .git vs Codemgr_wsdata conflict automatically
+            # in favor of .git
+            if [[ "$1" == "git" && "$2" == "teamware" ]]; then
+		echo "git"
+            else
+		echo "unknown"
+	    fi
+	else
+		echo "$1"
+	fi
+}
+
 if [[ -n "$CODEMGR_WS" ]]; then
 	if [[ ! -d "$CODEMGR_WS" ]]; then
 		print -u2 "which_scm: $CODEMGR_WS is not a directory."
 		exit 1
 	fi
-	set -- $(primary_type "$CODEMGR_WS")
-	if [[ $# != 1 ]]; then
-		set -- unknown
-	fi
+	set -- $(multi_conflict $(primary_type "$CODEMGR_WS"))
 	echo "$1 $CODEMGR_WS"
 	exit 0
 fi
@@ -92,20 +105,9 @@ DIR=$ORIG_CWD
 CWD_TYPE=$(primary_type "$DIR")
 SCM_TYPE=
 while [[ "$DIR" != / ]]; do
-	set -- $(primary_type "$DIR")
-	if [[ $# > 1 ]]; then
-		#
-		# Resolve .git vs Codemgr_wsdata conflict automatically
-		# in favor of .git
-		if [[ "$1" == "git" && "$2" == "teamware" ]]; then 
-			SCM_TYPE="$1"
-		else
-			echo "unknown $ORIG_CWD"
-			exit 0
-		fi
-	else
-		SCM_TYPE="$1"
-	fi
+	types=$(primary_type "$DIR")
+	set -- $(multi_conflict $(primary_type "$DIR"))
+	SCM_TYPE="$1"
 
 	# We're done searching if we hit either a change in type or the top
 	# of a "third type" control system.
