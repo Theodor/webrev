@@ -56,8 +56,8 @@ function primary_type
 	typeset scmid
 
 	[ -d "$1/.git" ] && scmid="$scmid git"
-	[ -d "$1/Codemgr_wsdata" ] && scmid="$scmid teamware"
 	[ -d "$1/.hg" ] && scmid="$scmid mercurial"
+	[ -d "$1/Codemgr_wsdata" ] && scmid="$scmid teamware"
 	[ -d "$1/CVS" ] && scmid="$scmid cvs"
 	[ -d "$1/.svn" ] && scmid="$scmid subversion"
 	echo $scmid
@@ -69,11 +69,14 @@ function multi_conflict
 	    #
             # Resolve .git vs Codemgr_wsdata conflict automatically
             # in favor of .git
-            if [[ "$1" == "git" && "$2" == "teamware" ]]; then
-		echo "git"
-            else
-		echo "unknown"
-	    fi
+	    case "$1#$2" in
+		git#teamware|teamware#git)
+		   echo git
+		   ;;
+		mercurial#teamware|teamware#mercurial)
+		   echo mercurial
+		   ;;
+	    esac	
 	else
 		echo "$1"
 	fi

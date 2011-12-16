@@ -141,6 +141,12 @@ span.new {
 </style>
 '
 
+# misc functions
+debug()
+{
+    [ -n "$DEBUG" ] && echo >/dev/stderr "Debug: $*"
+}
+
 # Upload the webrev via rsync. Return 0 on success, 1 on error.
 rsync_upload()
 {
@@ -1517,9 +1523,7 @@ function flist_from_wx
 		if (NF == 0) { c = -c; continue }
 		if (c > 0) print
 	  }
-	}' $wxfile > $FLIST
-
-	print " Done."
+	}' $wxfile
 }
 
 #
@@ -1610,9 +1614,6 @@ function git_active_wxfile
 
         done
 
-        #DEBUG:
-        #cp $TMPFLIST1 /tmp/debug.tmpflist1
-
         #
         # now based on the reflist go file by file and form wx-style active list
         # by placing comments (in appropriate order) from the TMPFLIST1
@@ -1628,11 +1629,12 @@ function git_active_wxfile
            echo "" >> $TMPFLIST
         done
 
-        #DEBUG:
-        #cp $TMPFLIST /tmp/debug.tmpflist
-
-
 	wxfile=$TMPFLIST
+
+	if debug ; then
+	    debug "file list ($wxfile)"
+	    cat $wxfile | while read f; do debug "$f"; done
+	fi
 }
 
 #
@@ -1645,13 +1647,37 @@ function flist_from_git
 	typeset child=$1
 	typeset parent=$2
 
-	print " File list from: git_active_wxfile $child $parent ...\c"
+	print -u2 " File list from: git_active_wxfile $child $parent ...\c"
 
 	git_active_wxfile $child $parent
 	
-	# flist_from_wx prints the Done, so we don't have to.
-	flist_from_wx $TMPFLIST
+	flist_from_wx $TMPFLIST >$FLIST
+	if debug ; then
+	    debug "flist ($FLIST):"
+	    cat $FLIST | while read f; do debug "$f"; done
+	fi
+
+	print -u2 " Done."
 }
+
+#
+# hg helper functions
+
+hg_revset()
+# generate a comma-list of HG revisions described by revset parameter
+{
+    typeset rev_pattern="$*"
+    typeset out=`hg log -R $codemgr_ws --template='{node|short}\n' -r"$rev_pattern"`
+    echo $out | sed 's# #+#g'
+}
+
+hg_revset1()
+# generate a single rev out of HG revset
+{
+    typeset rev_pattern="$*"
+    hg log -R $codemgr_ws --template='{node|short}\n' -r"$rev_pattern" | head -1
+}
+
 
 
 #
@@ -1667,6 +1693,70 @@ function hg_active_wxfile
 	wxfile=$TMPFLIST
 }
 
+function hg_active_wxfile_by_range
+{
+    ws=$1; shift
+    range="$*"
+
+    TMPFLISTREF=/tmp/$$.active.flist_ref
+    TMPFLIST1=/tmp/$$.active.flist_tmp1
+    TMPFLIST=/tmp/$$.active
+
+    hg -R $ws diff --git --rev "$PWS_REV:$CWS_REV" -U 0 | sed -n -e "s#^diff --git a/\(.*\) b/\(.*\)#\1 \2#p" > $TMPFLISTREF
+    #  get a list of revisions between $parent and $child 
+    #  in the format <PARENT>..<COMMIT>
+
+    changeset_list="`hg -R $ws log -r "$range" --template='{node|short}\n'`"
+    changeset_num=`echo "$changeset_list" | wc -l`
+    counter=0
+
+    debug "changeset list: $changeset_list"
+    for cs in $changeset_list; do
+	
+        #
+        # Modify temp active list with files changed between $prev and $crev in the 
+        # format "file counter comments"
+        #
+        comments=`hg -R $ws log --template='{desc}' -r $cs`
+	files=`hg -R $ws log --template='{files}' -r $cs`
+
+	debug "files for $cs: $files"
+        for f in $files; do
+ 	    # If commit list consist in 2 or more commits, add revision number before 
+            # each of the comment
+	    if [[ "$changeset_num" -gt 1 ]]; then
+		echo "$f ###--- $cs ---" >> $TMPFLIST1
+            fi
+
+	    echo "$comments" | while read line; do
+		[[ -n "$line" ]] && echo "$f ###$line" >> $TMPFLIST1
+	    done
+        done
+    done
+
+    if debug ; then
+	debug "comments dump ($TMPFLIST1)"
+	cat $TMPFLIST1 | while read f; do debug "$f"; done
+    fi
+
+    # now based on the reflist go file by file and form wx-style active list
+    # by placing comments (in appropriate order) from the TMPFLIST1
+
+    cat $TMPFLISTREF | while read file1 file2; do
+        [[ "x-$file2" != "x-$file1" ]] && print -n "$file2 " >> $TMPFLIST
+        echo "$file1" >> $TMPFLIST
+        echo "" >> $TMPFLIST
+        grep "^$file1 ###" $TMPFLIST1 | sed -e 's/^[^#]*###//'  >> $TMPFLIST
+        echo "" >> $TMPFLIST
+    done
+
+    wxfile=$TMPFLIST
+    if debug ; then
+	debug "file list ($wxfile)"
+	cat $wxfile | while read f; do debug "$f"; done
+    fi
+}
+
 #
 # flist_from_mercurial
 # Call hg-active to get a wx-style active list, and hand it off to
@@ -1677,17 +1767,14 @@ function flist_from_mercurial
 	typeset child=$1
 	typeset parent=$2
 
-	print " File list from: hg-active -p $parent ...\c"
+	[[ "x-$DEBUG" = "x-verbose" ]] && set -x
 
-	if [[ ! -x $HG_ACTIVE ]]; then
-		print		# Blank line for the \c above
-		print -u2 "Error: hg-active tool not found.  Exiting"
-		exit 1
-	fi
-	hg_active_wxfile $child $parent
-	
-	# flist_from_wx prints the Done, so we don't have to.
-	flist_from_wx $TMPFLIST
+	print -u2 " File list from: hg_active_wxfile_by_range $child $CWS_RANGE"
+	hg_active_wxfile_by_range $child "$CWS_RANGE"
+
+	flist_from_wx $TMPFLIST >$FLIST
+
+	print -u2 " Done."
 }
 
 #
@@ -1842,6 +1929,8 @@ function build_old_new_mercurial
 	typeset new_mode=
 	typeset file
 
+	[[ "x-$DEBUG" = "x-verbose" ]] && set -x
+
 	#
 	# Get old file mode, from the parent revision manifest entry.
 	# Mercurial only stores a "file is executable" flag, but the
@@ -1857,23 +1946,32 @@ function build_old_new_mercurial
 	old_mode=`sed -n -e "/^\\(...\\) . ${file}$/s//\\1/p" \
 	    < $HG_PARENT_MANIFEST`
 
-	#
-	# Get new file mode, directly from the filesystem.
-	# Normalize the mode to match Mercurial's behavior.
-	#
-	new_mode=`get_file_mode $CWS/$DIR/$F`
-	if [[ -n "$new_mode" ]]; then
-		if [[ "$new_mode" = *[1357]* ]]; then
-			new_mode=755
-		else
-			new_mode=644
-		fi
+	if [[ "$DIR" == "." ]]; then
+		file="$F"
+	else
+		file="$DIR/$F"
 	fi
+	file=`echo $file | sed 's#/#\\\/#g'`
+	new_mode=`sed -n -e "/^\\(...\\) . ${file}$/s//\\1/p" \
+	    < $HG_CHILD_MANIFEST`
 
 	#
 	# new version of the file.
 	#
 	rm -rf $newdir/$DIR/$F
+	hg cat -R $CWS -r "$CWS_REV" $CWS/$DIR/$F > \
+		    $newdir/$DIR/$F 2>/dev/null
+	if (( $? != 0 )); then
+	    rm -f $newdir/$DIR/$F
+	else
+	    if [[ -n $new_mode ]]; then
+		chmod $new_mode $newdir/$DIR/$F
+	    else
+		# should never happen
+		print -u2 "ERROR: set mode of $newdir/$DIR/$F"
+	    fi
+	fi
+
 	if [[ -e $CWS/$DIR/$F ]]; then
 		cp $CWS/$DIR/$F $newdir/$DIR/$F
 		if [[ -n $new_mode ]]; then
@@ -1893,8 +1991,8 @@ function build_old_new_mercurial
 	#
 	if [[ -n $parent_webrev && -e $PWS/$PDIR/$PF ]]; then
 		cp $PWS/$PDIR/$PF $olddir/$PDIR/$PF
-	elif [[ -n $HG_PARENT ]]; then
-		hg cat -R $CWS -r $HG_PARENT $CWS/$PDIR/$PF > \
+	elif [[ -n $PWS_REV ]]; then
+		hg cat -R $CWS -r "$PWS_REV" $CWS/$PDIR/$PF > \
 		    $olddir/$PDIR/$PF 2>/dev/null
 
 		if (( $? != 0 )); then
@@ -2036,10 +2134,15 @@ Environment:
 
 SCM Specific Options:
 	TeamWare: webrev [common-options] -l [arguments to 'putback']
+        Mercurial:      
+                  -c <child_rev>: Use specified revision (or even rev range) as child 
+                                   (default is "outgoing()")
+                  -r <parent_rev>: Use specified revision as a basis for comparison 
+                                     (default is min($child_rev)^)
         GIT:      
                   -c <child_rev>: Use specified revision as child 
                                    (default is HEAD)
-                  -r <referent_rev>: Use specified revision as basis for comparison 
+                  -r <parent_rev>: Use specified revision as a basis for comparison 
                                      (default is $child_rev^)
 SCM Environment:
 	CODEMGR_WS: Workspace location.
@@ -2234,6 +2337,8 @@ esac
 
 print -u2 "   SCM detected: $SCM_MODE"
 
+[[ "x-$DEBUG" = "x-verbose" ]] && set -x
+
 if [[ -n $lflag ]]; then
 	#
 	# If the -l flag is given instead of the name of a file list,
@@ -2273,7 +2378,9 @@ elif [[ -n $wflag ]]; then
 	fi
 
 	print -u2 " File list from: wx 'active' file '$wxfile' ... \c"
-	flist_from_wx $wxfile
+	flist_from_wx $wxfile >$FLIST
+	print -u2 " Done."
+
 	flist_done=1
 	if [[ -n "$*" ]]; then
 		shift
@@ -2465,7 +2572,55 @@ elif [[ $SCM_MODE == "mercurial" ]]; then
 		codemgr_parent=`hg path -R $codemgr_ws default 2>/dev/null`
 	fi
 
-	CWS_REV=`hg parent -R $codemgr_ws --template '{node|short}' 2>/dev/null`
+	dirty_tree=`hg -R $codemgr_ws status -m`
+	[[ -n $dirty_tree ]] &&
+	    print -u2 "WARNING: your workdir is dirty, please, commit the changes! "
+
+	# convert explicitly specified rev arguments  to explicit rev sha's
+	if [[ -n $CWS_REV ]] ; then
+	    range=`hg_revset $CWS_REV`
+	    CWS_REV=`hg_revset1 "max($range)"` && debug "explicit CWS_REV: $CWS_REV"
+	    [[ "x-$range" != "x-$CWS_REV" ]] && CWS_RANGE="$range"
+	fi
+	[[ -n $PWS_REV ]] && PWS_REV=`hg_revset1 $PWS_REV` && debug "explicit PWS_REV: $PWS_REV"
+
+	# by default try to set child revision to the head of outgoing()
+	if [[ -z $CWS_REV ]] ; then
+	    print -u2 "Default rev(-c): \"outgoing()\""
+	    outgoing=`hg_revset 'outgoing()'`
+	    heads=`hg_revset "heads(${outgoing})"`
+	    headsep=`echo "$heads" | sed s#[^,]##g`
+	    case ${#headsep} in
+		0)
+		    CWS_REV=$heads
+		    if [[ -n $CWS_REV && -z "$PWS_REV" ]] ; then
+			# all the outgoing revs
+		        PWS_REV=`hg_revset "max(!($outgoing))"`
+			CWS_RANGE="$outgoing"
+		    fi
+		    ;;
+		*)
+		    print -u2 "Error: Cannot discover child revision, too many outgoing heads"
+		    exit 1
+		    ;;
+	    esac
+	fi
+
+	if [[ -z $CWS_REV ]] ; then
+	    CWS_REV=`hg parent -R $codemgr_ws --template '{node|short}\n' 2>/dev/null`
+	fi
+
+	if [[ -z $PWS_REV ]] ; then
+	    [[ -z $CWS_RANGE ]] && CWS_RANGE="$CWS_REV"
+	    # take the parent of "first" changeset in CWS range
+	    PWS_REV=`hg_revset1 "p1(min($CWS_RANGE))"`
+	fi
+
+	if [[ -z "$CWS_RANGE" && -n $PWS_REV && -n $CWS_REV ]] ; then
+	    # all the revs inbetween, including CWS_REV and excluding PWS_REV
+	    CWS_RANGE="$PWS_REV::$CWS_REV-$PWS_REV"
+	fi
+
 	CWS=$codemgr_ws
 	PWS=$codemgr_parent
 
@@ -2510,23 +2665,11 @@ elif [[ $SCM_MODE == "mercurial" ]]; then
 	fi
 	
 	#
-	# At this point we must have a wx flist either from hg-active,
-	# or in general.  Use it to try and find our parent revision,
-	# if we don't have one.
-	#
-	if [[ -z $HG_PARENT ]]; then
-		eval `sed -e "s/#.*$//" $wxfile | $GREP HG_PARENT=`
-	fi
-
-	#
 	# If we still don't have a parent, we must have been given a
 	# wx-style active list with no HG_PARENT specification, run
 	# hg-active and pull an HG_PARENT out of it, ignore the rest.
 	#
-	if [[ -z $HG_PARENT && -x $HG_ACTIVE ]]; then
-		$HG_ACTIVE -w $codemgr_ws -p $real_parent | \
-		    eval `sed -e "s/#.*$//" | $GREP HG_PARENT=`
-	elif [[ -z $HG_PARENT ]]; then
+	if [[ -z $PWS_REV ]]; then
 		print -u2 "Error: Cannot discover parent revision"
 		exit 1
 	fi
@@ -2643,17 +2786,11 @@ fi
 if [[ -n $parent_webrev ]]; then
 	print "Compare against: webrev at $parent_webrev"
 else
-	if [[ -n $HG_PARENT ]]; then
-		hg_parent_short=`echo $HG_PARENT \
-			| sed -e 's/\([0-9a-f]\{12\}\).*/\1/'`
-		print "Compare against: $PWS (at $hg_parent_short)"
-	else
-		if [[ -n $PWS_REV ]]; then 
-			print "Compare against: $PWS (at $PWS_REV)"
-		else
-			print "Compare against: $PWS"
-                fi
-	fi
+    if [[ -n $PWS_REV ]]; then 
+	print "Compare against: $PWS (at $PWS_REV)"
+    else
+	print "Compare against: $PWS"
+    fi
 fi
 
 [[ -n $INCLUDE_FILE ]] && print "      Including: $INCLUDE_FILE"
@@ -2706,29 +2843,44 @@ if [[ $SCM_MODE == "mercurial" ]]; then
 	#
 	# Transform the FLIST into a temporary sed script that matches
 	# relevant entries in the Mercurial manifest as follows:
-	# 1) The script will be used against the parent revision manifest,
-	#    so for FLIST lines that have two filenames (a renamed file)
-	#    keep only the old name.
-	# 2) Escape all forward slashes the filename.
-	# 3) Change the filename into another sed command that matches
+	# 1) Escape all forward slashes the filename.
+	# 2) Change the filename into another sed command that matches
 	#    that file in "hg manifest -v" output:  start of line, three
 	#    octal digits for file permissions, space, a file type flag
 	#    character, space, the filename, end of line.
 	#
 	SEDFILE=/tmp/$$.manifest.sed
-	sed '
-		s#^[^ ]* ##
+	cat $FLIST | while read file1 file2; do echo $file1; [[ -n "$file2" ]] && echo $file2; done |
+	    sed '
 		s#/#\\\/#g
 		s#^.*$#/^... . &$/p#
-	' < $FLIST > $SEDFILE
+	    ' > $SEDFILE
 
+	if debug; then
+	    debug "sedfile ($SEDFILE):"
+	    cat $SEDFILE | while read f; do debug "$f"; done
+	fi
 	#
 	# Apply the generated script to the output of "hg manifest -v"
 	# to get the relevant subset for this webrev.
 	#
-	HG_PARENT_MANIFEST=/tmp/$$.manifest
-	hg -R $CWS manifest -v -r $HG_PARENT |
+	HG_PARENT_MANIFEST=/tmp/$$.parent_manifest
+	hg -R $CWS manifest -v -r "$PWS_REV" |
 	    sed -n -f $SEDFILE > $HG_PARENT_MANIFEST
+
+	HG_CHILD_MANIFEST=/tmp/$$.child_manifest
+	hg -R $CWS manifest -v -r "$CWS_REV" |
+	    sed -n -f $SEDFILE > $HG_CHILD_MANIFEST
+
+	if debug ; then
+	    debug "flist ($FLIST):"
+	    cat $FLIST | while read f; do debug "$f"; done
+	    debug "parent manifest ($PWS_REV):"
+	    cat $HG_PARENT_MANIFEST | while read f; do debug "$f"; done
+	    debug "child manifest ($CWS_REV):"
+	    cat $HG_CHILD_MANIFEST | while read f; do debug "$f"; done
+
+	fi
 fi
 
 #
@@ -3043,8 +3195,8 @@ if [[ -n $parent_webrev ]]; then
 	print "webrev at $parent_webrev"
 else
 	print "$PWS"
-	if [[ -n $hg_parent_short ]]; then
-		print "(at $hg_parent_short)"
+	if [[ -n $PWS_REV ]]; then
+		print "(at $PWS_REV)"
 	fi
 fi
 print "</td></tr>"
