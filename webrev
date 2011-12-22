@@ -2588,9 +2588,11 @@ elif [[ $SCM_MODE == "mercurial" ]]; then
 	if [[ -z $CWS_REV ]] ; then
 	    print -u2 "Default rev(-c): \"outgoing()\""
 	    outgoing=`hg_revset 'outgoing()'`
-	    heads=`hg_revset "heads(${outgoing})"`
-	    headsep=`echo "$heads" | sed s#[^,]##g`
-	    case ${#headsep} in
+	    if [[ -n $outgoing ]] ; then
+		heads=`hg_revset "heads(${outgoing})"`
+	    	headsep=`echo "$heads" | sed s#[^,]##g`
+
+	    	case ${#headsep} in
 		0)
 		    CWS_REV=$heads
 		    if [[ -n $CWS_REV && -z "$PWS_REV" ]] ; then
@@ -2603,7 +2605,8 @@ elif [[ $SCM_MODE == "mercurial" ]]; then
 		    print -u2 "Error: Cannot discover child revision, too many outgoing heads"
 		    exit 1
 		    ;;
-	    esac
+	    	esac
+	    fi
 	fi
 
 	if [[ -z $CWS_REV ]] ; then
@@ -2613,7 +2616,8 @@ elif [[ $SCM_MODE == "mercurial" ]]; then
 	if [[ -z $PWS_REV ]] ; then
 	    [[ -z $CWS_RANGE ]] && CWS_RANGE="$CWS_REV"
 	    # take the parent of "first" changeset in CWS range
-	    PWS_REV=`hg_revset1 "p1(min($CWS_RANGE))"`
+	    last=`hg_revset1 "min($CWS_RANGE)"`
+	    PWS_REV="${last}^"
 	fi
 
 	if [[ -z "$CWS_RANGE" && -n $PWS_REV && -n $CWS_REV ]] ; then
