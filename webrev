@@ -1667,7 +1667,7 @@ hg_revset()
 # generate a comma-list of HG revisions described by revset parameter
 {
     typeset rev_pattern="$*"
-    typeset out=`hg log -R $codemgr_ws --template='{node|short}\n' -r"$rev_pattern"`
+    typeset out=`hg --config extensions.parentrevspec= log -R $codemgr_ws --template='{node|short}\n' -r"$rev_pattern"`
     echo $out | sed 's# #+#g'
 }
 
@@ -1675,7 +1675,7 @@ hg_revset1()
 # generate a single rev out of HG revset
 {
     typeset rev_pattern="$*"
-    hg log -R $codemgr_ws --template='{node|short}\n' -r"$rev_pattern" | head -1
+    hg --config extensions.parentrevspec= log -R $codemgr_ws --template='{node|short}\n' -r"$rev_pattern" | head -1
 }
 
 
@@ -1702,11 +1702,11 @@ function hg_active_wxfile_by_range
     TMPFLIST1=/tmp/$$.active.flist_tmp1
     TMPFLIST=/tmp/$$.active
 
-    hg -R $ws diff --git --rev "$PWS_REV:$CWS_REV" -U 0 | sed -n -e "s#^diff --git a/\(.*\) b/\(.*\)#\1 \2#p" > $TMPFLISTREF
+    hg --config extensions.parentrevspec= -R $ws diff --git --rev "$PWS_REV:$CWS_REV" -U 0 | sed -n -e "s#^diff --git a/\(.*\) b/\(.*\)#\1 \2#p" > $TMPFLISTREF
     #  get a list of revisions between $parent and $child 
     #  in the format <PARENT>..<COMMIT>
 
-    changeset_list="`hg -R $ws log -r "$range" --template='{node|short}\n'`"
+    changeset_list="`hg --config extensions.parentrevspec= -R $ws log -r "$range" --template='{node|short}\n'`"
     changeset_num=`echo "$changeset_list" | wc -l`
     counter=0
 
@@ -1717,8 +1717,8 @@ function hg_active_wxfile_by_range
         # Modify temp active list with files changed between $prev and $crev in the 
         # format "file counter comments"
         #
-        comments=`hg -R $ws log --template='{desc}' -r $cs`
-	files=`hg -R $ws log --template='{files}' -r $cs`
+        comments=`hg --config extensions.parentrevspec= -R $ws log --template='{desc}' -r $cs`
+	files=`hg --config extensions.parentrevspec= -R $ws log --template='{files}' -r $cs`
 
 	debug "files for $cs: $files"
         for f in $files; do
@@ -2869,11 +2869,11 @@ if [[ $SCM_MODE == "mercurial" ]]; then
 	# to get the relevant subset for this webrev.
 	#
 	HG_PARENT_MANIFEST=/tmp/$$.parent_manifest
-	hg -R $CWS manifest -v -r "$PWS_REV" |
+	hg --config extensions.parentrevspec= -R $CWS manifest -v -r "$PWS_REV" |
 	    sed -n -f $SEDFILE > $HG_PARENT_MANIFEST
 
 	HG_CHILD_MANIFEST=/tmp/$$.child_manifest
-	hg -R $CWS manifest -v -r "$CWS_REV" |
+	hg --config extensions.parentrevspec= -R $CWS manifest -v -r "$CWS_REV" |
 	    sed -n -f $SEDFILE > $HG_CHILD_MANIFEST
 
 	if debug ; then
