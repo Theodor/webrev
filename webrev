@@ -1667,7 +1667,7 @@ hg_revset()
 # generate a comma-list of HG revisions described by revset parameter
 {
     typeset rev_pattern="$*"
-    typeset out=`hg --config extensions.parentrevspec= log -R $codemgr_ws --template='{node|short}\n' -r"$rev_pattern"`
+    typeset out=`hg --config extensions.parentrevspec= --config paths.default=$codemgr_parent log -R $codemgr_ws --template='{node|short}\n' -r"$rev_pattern"`
     echo $out | sed 's# #+#g'
 }
 
