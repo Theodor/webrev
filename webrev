@@ -1968,7 +1968,8 @@ function build_old_new_mercurial
 		chmod $new_mode $newdir/$DIR/$F
 	    else
 		# should never happen
-		print -u2 "ERROR: set mode of $newdir/$DIR/$F"
+		true
+		#print -u2 "ERROR: set mode of $newdir/$DIR/$F"
 	    fi
 	fi
 
@@ -1978,7 +1979,8 @@ function build_old_new_mercurial
 			chmod $new_mode $newdir/$DIR/$F
 		else
 			# should never happen
-			print -u2 "ERROR: set mode of $newdir/$DIR/$F"
+			true
+			#print -u2 "ERROR: set mode of $newdir/$DIR/$F"
 		fi
 	fi
 
@@ -2002,7 +2004,8 @@ function build_old_new_mercurial
 				chmod $old_mode $olddir/$PDIR/$PF
 			else
 				# should never happen
-				print -u2 "ERROR: set mode of $olddir/$PDIR/$PF"
+				true
+				#print -u2 "ERROR: set mode of $olddir/$PDIR/$PF"
 			fi
 		fi
 	fi
@@ -2574,7 +2577,7 @@ elif [[ $SCM_MODE == "mercurial" ]]; then
 
 	dirty_tree=`hg -R $codemgr_ws status -m`
 	[[ -n $dirty_tree ]] &&
-	    print -u2 "WARNING: your workdir is dirty, please, commit the changes! "
+	    print -u2 "WARNING: There are uncommitted changes in child workspace! You might want to commit them."
 
 	# convert explicitly specified rev arguments  to explicit rev sha's
 	if [[ -n $CWS_REV ]] ; then
