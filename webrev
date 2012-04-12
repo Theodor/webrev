@@ -2756,6 +2756,9 @@ fi
 #
 WDIR=${WDIR:-$CWS/webrev}
 
+# URL prepended to WDIR in webrev's output for copy-pasting into RTIs
+WEBACCESS_URL=${WEBACCESS_URL:-http://fileserv.us.oracle.com/}
+
 #
 # Name of the webrev, derived from the workspace name or output directory;
 # in the future this could potentially be an option.
@@ -2801,7 +2804,7 @@ else
 fi
 
 [[ -n $INCLUDE_FILE ]] && print "      Including: $INCLUDE_FILE"
-print "      Output to: $WDIR"
+print "      Output to: ${WEBACCESS_URL}${WDIR}"
 
 #
 # Save the file list in the webrev dir
