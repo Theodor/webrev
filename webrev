@@ -2817,7 +2817,7 @@ print "      Output to: ${WEBACCESS_URL}${WDIR}"
 #    Bug IDs will be replaced by a URL.  Order of precedence
 #    is: default location, $WEBREV_BUGURL, the -O flag.
 #
-BUGURL='http://monaco.sfbay.sun.com/detail.jsp?cr='
+BUGURL='https://bug.oraclecorp.com/pls/bug/webbug_print.show?c_rptno='
 [[ -n $WEBREV_BUGURL ]] && BUGURL="$WEBREV_BUGURL"
 [[ -n "$Oflag" ]] && \
     BUGURL='http://bugs.opensolaris.org/bugdatabase/view_bug.do?bug_id='
